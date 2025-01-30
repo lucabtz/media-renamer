@@ -1,4 +1,8 @@
 # media-renamer
+
+> [!WARNING]  
+> This program is still work-in-progress, some features may not work as intended. Contributions are welcome!
+
 media-renamer is an utility program to rename media files into the format supported by the Plex Media Server.
 
 It works by first walking through an input directory (recursively or not) and collecting the files with the recognized media extensions (configurable).

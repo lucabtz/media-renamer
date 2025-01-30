@@ -65,11 +65,11 @@ struct Args {
     #[arg(short, long, default_value_t = Action::Test)]
     action: Action,
 
-    // The output directory for the files
+    /// The output directory for the files
     #[arg(short, long)]
     output: String,
 
-    // The path of the configuration file
+    /// The path of the configuration file
     #[arg(long)]
     config: Option<String>,
 }
