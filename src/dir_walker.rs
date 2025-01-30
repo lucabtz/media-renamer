@@ -5,14 +5,19 @@ use std::{
     path::PathBuf,
 };
 
+use log::debug;
+
+use crate::path_utils::get_filename;
+
 /// An iterator that iterates over a directory
 pub struct DirWalker {
     iterator_queue: VecDeque<Result<ReadDir, Error>>,
     max_depth: Option<usize>,
+    ignored_dirs: Vec<String>,
 }
 
 impl DirWalker {
-    pub fn new(directory: &str, max_depth: Option<usize>) -> Self {
+    pub fn new(directory: &str, max_depth: Option<usize>, ignored_dirs: Vec<String>) -> Self {
         let path = PathBuf::from(directory);
         let mut iterator_queue = VecDeque::new();
         if !path.is_dir() {
@@ -29,6 +34,7 @@ impl DirWalker {
         Self {
             iterator_queue,
             max_depth,
+            ignored_dirs,
         }
     }
 }
@@ -47,7 +53,12 @@ impl Iterator for DirWalker {
                     if let Some(item) = iter.next() {
                         if let Ok(entry) = &item {
                             if entry.path().is_dir() {
-                                self.iterator_queue.push_back(fs::read_dir(entry.path()));
+                                if get_filename(&entry.path()).is_some_and(|name| self.ignored_dirs.contains(&name)) {
+                                    debug!("Ignoring directory {} because excluded", entry.path().display());
+                                } else {
+                                    debug!("Adding directory to iteration queue {}", entry.path().display());
+                                    self.iterator_queue.push_back(fs::read_dir(entry.path()));
+                                }
                             }
                         }
                         // put back the iterator in front of the queue, it may be not exhausted yet

@@ -43,11 +43,12 @@ Explanation:
 # Configuration
 Default configuration
 ```toml
-tvdb_api_key = "<API KEY>"
+tvdb_api_key = "9dfa4bc9-a0ff-4d9a-a99b-41a36531350f"
 extensions = ["mkv", "srr"]
 tv_regex = ["(?<name>.*) [Ss](?<season>[0-9]+)[Ee](?<episode>[0-9]+)"]
 movie_regex = ["(?<name>.*) (?<year>[0-9]+) "]
 replacements = [[".", " "]]
+ignored_dirs = ["Sample", "sample", "Samples", "samples"]
 ```
 Explanation:
 - `tvdb_api_key`: self-explanatory
@@ -55,6 +56,7 @@ Explanation:
 - `tv_regex`: if the filename matches any of these regexes, the file is considered a TV Show. The default regex matches `Show Name S01E01`
 - `movie_regex`: if the filename matches any of these regexes and does not match any TV Show regex the file is considered a movie. The default regex matches `Move Name 2025`
 - `replacements`: replacements to be applied before the regexes are matched. The default replacement allows matching  `Show.Name.S01E01` and  `Show Name S01E01` with the same regex.
+- `ignored_dirs`: directories names that should be ignored while traversing the directory tree.
 
 # Installation
 You need to have `cargo` installed, then

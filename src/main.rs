@@ -1,5 +1,5 @@
 use std::{
-    env, fs::{self, DirEntry}, io, os, path::{Path, PathBuf}
+    env, fs::{self, DirEntry}, io, os, path::{Path, PathBuf}, vec
 };
 
 use clap::{builder::PossibleValue, Parser, ValueEnum};
@@ -14,6 +14,7 @@ mod dir_walker;
 mod name_parser;
 mod media;
 mod tvdb;
+mod path_utils;
 
 #[derive(Debug, Clone, Copy)]
 enum Action {
@@ -90,6 +91,9 @@ struct Config {
 
     /// Replacements that will be applied before matching with regex
     replacements: Vec<(String, String)>,
+
+    /// Directories with these names are ignored
+    ignored_dirs: Vec<String>,
 }
 
 impl Default for Config {
@@ -106,6 +110,12 @@ impl Default for Config {
             replacements: vec![
                 (".".to_string(), " ".to_string()),
             ],
+            ignored_dirs: vec![
+                "Sample".to_string(),
+                "sample".to_string(),
+                "Samples".to_string(),
+                "samples".to_string(),
+            ]
         }
     }
 }
@@ -205,7 +215,7 @@ fn main() {
     }
     info!("Client connected");    
 
-    for entry in DirWalker::new(&args.input, args.max_depth)
+    for entry in DirWalker::new(&args.input, args.max_depth, config.ignored_dirs.clone())
         .filter_map(|e| e.ok())
         .filter(|e| e.path().is_file())
         .filter(|e| extension_matches(e, &config.extensions))

@@ -3,7 +3,7 @@ use std::path::Path;
 use log::{debug, warn};
 use regex::Regex;
 
-use crate::{media::Media, Config};
+use crate::{media::Media, path_utils::{get_extension, get_filestem}, Config};
 
 pub fn parse_filepath(path: &Path, config: &Config) -> Option<ParsedFile> {
     let mut stem = get_filestem(path)?;
@@ -31,14 +31,6 @@ impl ParsedFile {
     pub fn extension(&self) -> &str {
         &self.extension
     }
-}
-
-fn get_filestem(path: &Path) -> Option<String> {
-    Some(path.file_stem()?.to_str()?.to_string())
-}
-
-fn get_extension(path: &Path) -> Option<String> {
-    Some(path.extension()?.to_str()?.to_string())
 }
 
 fn parse_stem(stem: &str, config: &Config) -> Option<Media> {
