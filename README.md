@@ -24,6 +24,7 @@ Options:
   -a, --action <ACTION>        What action should be done on the files [default: test] [possible values: test, move, copy, symlink]
   -o, --output <OUTPUT>        The output directory for the files
       --config <CONFIG>        The path of the configuration file
+      --verbose                Should print verbose output (useful for debugging config for example)
   -h, --help                   Print help
   -V, --version                Print version
 ```
@@ -37,6 +38,7 @@ Explanation:
   * `symlink`: create a symlink to the original file in the new location (useful to keep seeding when disk space is an issue)
 - `--output`: the output directory
 - `--config`: the path to the configuration file, if not set it is at `~/.media-renamer/config.toml` and will be created after the first run
+- `--verbose`: use verbose output
 - `--help`: prints the help text
 - `--version`: prints the program version
 

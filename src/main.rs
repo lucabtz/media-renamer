@@ -73,6 +73,10 @@ struct Args {
     /// The path of the configuration file
     #[arg(long)]
     config: Option<String>,
+
+    /// Should print verbose output (useful for debugging config for example)
+    #[arg(long, default_value_t = false)]
+    verbose: bool,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -146,15 +150,16 @@ fn symlink(original: &Path, link: &Path) -> Result<(), io::Error> {
 }
 
 fn main() {
+    let args = Args::parse();
+
     simplelog::TermLogger::init(
-        log::LevelFilter::Debug,
+        if args.verbose { log::LevelFilter::Debug } else { log::LevelFilter::Info },
         simplelog::Config::default(),
         simplelog::TerminalMode::Mixed,
         simplelog::ColorChoice::Auto,
     )
     .expect("Could not initialize logger");
 
-    let args = Args::parse();
 
     debug!("{:#?}", args);
 
