@@ -138,13 +138,14 @@ fn extension_matches(entry: &DirEntry, extensions: &[String]) -> bool {
 }
 
 fn symlink(original: &Path, link: &Path) -> Result<(), io::Error> {
+    let original_absolute = original.canonicalize()?;
     #[cfg(target_os="windows")]
     {
-        os::windows::fs::symlink_file(original, link)?;
+        os::windows::fs::symlink_file(original_absolute, link)?;
     }
     #[cfg(target_os="linux")]
     {
-        os::unix::fs::symlink(original, link)?;
+        os::unix::fs::symlink(original_absolute, link)?;
     }
     Ok(())
 }
