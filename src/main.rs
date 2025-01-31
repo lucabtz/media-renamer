@@ -144,7 +144,7 @@ fn symlink(original: &Path, link: &Path) -> Result<(), io::Error> {
     }
     #[cfg(target_os="linux")]
     {
-        os::unix::fs::symlink(original, link);
+        os::unix::fs::symlink(original, link)?;
     }
     Ok(())
 }
