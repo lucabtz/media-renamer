@@ -1,20 +1,20 @@
 use std::{
-    env, fs::{self, DirEntry}, io, os, path::{Path, PathBuf}, vec
+    env, fs::{self, DirEntry, OpenOptions}, io, os, path::{Path, PathBuf}, vec
 };
 
 use clap::{builder::PossibleValue, Parser, ValueEnum};
 use dir_walker::DirWalker;
-use log::{debug, error, info, warn, };
+use log::{debug, error, info, warn};
 use media::Media;
 use name_parser::parse_filepath;
 use serde::{Deserialize, Serialize};
 use tvdb::{MediaType, TvdbClient};
 
 mod dir_walker;
-mod name_parser;
 mod media;
-mod tvdb;
+mod name_parser;
 mod path_utils;
+mod tvdb;
 
 #[derive(Debug, Clone, Copy)]
 enum Action {
@@ -111,17 +111,31 @@ impl Default for Config {
             movie_regex: vec![
                 "(?<name>.*) (?<year>[0-9]+) ".to_string(), // Movie Name 2025
             ],
-            replacements: vec![
-                (".".to_string(), " ".to_string()),
-            ],
+            replacements: vec![(".".to_string(), " ".to_string())],
             ignored_dirs: vec![
                 "Sample".to_string(),
                 "sample".to_string(),
                 "Samples".to_string(),
                 "samples".to_string(),
-            ]
+            ],
         }
     }
+}
+
+fn get_conf_dir() -> Option<PathBuf> {
+    let Some(mut home_dir) = env::home_dir() else {
+        error!("Home dir not found for config, consider specifying the config file path using --config");
+        return None;
+    };
+
+    home_dir.push(".media-renamer");
+    Some(home_dir)
+}
+
+fn get_filepath_in_conf_dir(filename: &str) -> Option<PathBuf> {
+    let mut path = get_conf_dir()?;
+    path.push(filename);
+    Some(path)
 }
 
 fn extension_matches(entry: &DirEntry, extensions: &[String]) -> bool {
@@ -139,11 +153,11 @@ fn extension_matches(entry: &DirEntry, extensions: &[String]) -> bool {
 
 fn symlink(original: &Path, link: &Path) -> Result<(), io::Error> {
     let original_absolute = original.canonicalize()?;
-    #[cfg(target_os="windows")]
+    #[cfg(target_os = "windows")]
     {
         os::windows::fs::symlink_file(original_absolute, link)?;
     }
-    #[cfg(target_os="linux")]
+    #[cfg(target_os = "linux")]
     {
         os::unix::fs::symlink(original_absolute, link)?;
     }
@@ -153,32 +167,68 @@ fn symlink(original: &Path, link: &Path) -> Result<(), io::Error> {
 fn main() {
     let args = Args::parse();
 
-    simplelog::TermLogger::init(
-        if args.verbose { log::LevelFilter::Debug } else { log::LevelFilter::Info },
-        simplelog::Config::default(),
-        simplelog::TerminalMode::Mixed,
-        simplelog::ColorChoice::Auto,
+    // ensure conf dir exists
+    let conf_dir = get_conf_dir().expect("Could not get home directory");
+    if !conf_dir.exists() {
+        match fs::create_dir_all(&conf_dir) {
+            Ok(()) => {},
+            Err(error) => {
+                println!("Could not create conf dir {}: {}", conf_dir.display(), error);
+                return;
+            }
+        }
+    }
+
+    let log_filepath = get_filepath_in_conf_dir("log.txt").expect("Could not find logfile path");
+    
+    let file = match OpenOptions::new().append(true).create(true).open(&log_filepath) {
+        Ok(file) => file,
+        Err(error) => {
+            println!("Could not open log file {}: {}", log_filepath.display(), error);
+            return;
+        },
+    };
+
+    let level = if args.verbose {
+        log::LevelFilter::Debug
+    } else {
+        log::LevelFilter::Info
+    };
+
+    simplelog::CombinedLogger::init(
+        vec![
+            simplelog::TermLogger::new(
+                level,
+                simplelog::Config::default(),
+                simplelog::TerminalMode::Mixed,
+                simplelog::ColorChoice::Auto,
+            ),
+            simplelog::WriteLogger::new(
+                level,
+                simplelog::Config::default(),
+                file
+            )
+        ]
     )
     .expect("Could not initialize logger");
 
-
     debug!("{:#?}", args);
 
-    let Some(config_path) = args.config.map_or_else(|| {
-        let Some(mut home_dir) = env::home_dir() else { 
-            error!("Home dir not found for config, consider specifying the config file path using --config");
-            return None;
-        };
-            
-        home_dir.push(".media-renamer");
-        home_dir.push("config.toml");
-        Some(home_dir)
-    }, |c| Some(PathBuf::from(c))) else { return; };
+    let Some(config_path) = args.config.map_or_else(
+        || get_filepath_in_conf_dir("config.toml"),
+        |c| Some(PathBuf::from(c)),
+    ) else {
+        return;
+    };
 
     if !config_path.exists() {
         if let Some(parent) = config_path.parent() {
             if let Err(error) = fs::create_dir_all(parent) {
-                error!("Could not create directories to {}: {}", parent.display(), error);
+                error!(
+                    "Could not create directories to {}: {}",
+                    parent.display(),
+                    error
+                );
             }
         }
         let default_config = Config::default();
@@ -187,28 +237,34 @@ fn main() {
             &config_path,
             toml::to_string(&default_config).expect("Could not serialize the default config"),
         ) {
-            error!("Could not write default configuration to {}: {}", config_path.display(), error);
+            error!(
+                "Could not write default configuration to {}: {}",
+                config_path.display(),
+                error
+            );
             warn!("Continuing with defaults");
         }
     }
 
     info!("Reading configuration from {}", config_path.display());
     let config = match fs::read_to_string(&config_path) {
-        Ok(config_string) => {
-            match toml::from_str(&config_string) {
-                Ok(conf) => conf,
-                Err(error) => {
-                    error!("Could not parse config {}: {}", config_path.display(), error);
-                    warn!("Continuing with defaults");
-                    Config::default()
-                },
+        Ok(config_string) => match toml::from_str(&config_string) {
+            Ok(conf) => conf,
+            Err(error) => {
+                error!(
+                    "Could not parse config {}: {}",
+                    config_path.display(),
+                    error
+                );
+                warn!("Continuing with defaults");
+                Config::default()
             }
         },
         Err(error) => {
             error!("Could not read config {}: {}", config_path.display(), error);
             warn!("Continuing with defaults");
             Config::default()
-        },
+        }
     };
 
     debug!("{:#?}", config);
@@ -219,7 +275,7 @@ fn main() {
         error!("Error in logging in to API: ({})", error);
         return;
     }
-    info!("Client connected");    
+    info!("Client connected");
 
     for entry in DirWalker::new(&args.input, args.max_depth, config.ignored_dirs.clone())
         .filter_map(|e| e.ok())
@@ -237,24 +293,24 @@ fn main() {
             Media::TvSeries { .. } => MediaType::Series,
             Media::Movie { .. } => MediaType::Movie,
         };
-        
+
         let media = match parsed_file.media() {
-            Media::TvSeries { name, .. } | Media::Movie { name, ..} => {
+            Media::TvSeries { name, .. } | Media::Movie { name, .. } => {
                 match tvdb.search(&name, media_type) {
                     Ok(results) => {
                         if let Some(result) = results.first() {
-                            parsed_file.media().change_name(result.name.clone())    
+                            parsed_file.media().change_name(result.name.clone())
                         } else {
                             warn!("No result for {} on TVDB: ignoring", name);
                             continue;
                         }
-                    },
+                    }
                     Err(error) => {
                         error!("{}", error);
                         continue;
-                    },
+                    }
                 }
-            },
+            }
         };
 
         debug!("{:#?}", media);
@@ -270,38 +326,60 @@ fn main() {
         }
 
         match args.action {
-            Action::Test => {},
+            Action::Test => {}
             _ => match final_path.parent() {
                 Some(parent_final_path) => {
                     if let Err(error) = fs::create_dir_all(parent_final_path) {
-                        error!("Could not create directory {}: {}", parent_final_path.display(), error);
+                        error!(
+                            "Could not create directory {}: {}",
+                            parent_final_path.display(),
+                            error
+                        );
                         continue;
                     }
-                },
-                None => {},
-            }
-            
+                }
+                None => {}
+            },
         }
 
         match args.action {
             Action::Test => {
-                info!("TEST: would move from {} to {}", entry.path().display(), final_path.display());
-            },
+                info!(
+                    "TEST: would move from {} to {}",
+                    entry.path().display(),
+                    final_path.display()
+                );
+            }
             Action::Move => {
                 if let Err(error) = fs::rename(entry.path(), &final_path) {
-                    error!("Could not move {} to {}: {}", entry.path().display(), final_path.display(), error);
+                    error!(
+                        "Could not move {} to {}: {}",
+                        entry.path().display(),
+                        final_path.display(),
+                        error
+                    );
                 }
-            },
+            }
             Action::Copy => {
                 if let Err(error) = fs::copy(entry.path(), &final_path) {
-                    error!("Could not copy {} to {}: {}", entry.path().display(), final_path.display(), error);
+                    error!(
+                        "Could not copy {} to {}: {}",
+                        entry.path().display(),
+                        final_path.display(),
+                        error
+                    );
                 }
-            },
+            }
             Action::Symlink => {
                 if let Err(error) = symlink(&entry.path(), &final_path) {
-                    error!("Could not copy {} to {}: {}", entry.path().display(), final_path.display(), error);
+                    error!(
+                        "Could not copy {} to {}: {}",
+                        entry.path().display(),
+                        final_path.display(),
+                        error
+                    );
                 }
-            },
+            }
         }
     }
 }
