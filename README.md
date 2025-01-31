@@ -60,10 +60,10 @@ Explanation:
 - `replacements`: replacements to be applied before the regexes are matched. The default replacement allows matching  `Show.Name.S01E01` and  `Show Name S01E01` with the same regex.
 - `ignored_dirs`: directories names that should be ignored while traversing the directory tree.
 
-# Installation
+# Build
 You need to have `cargo` installed, then
 ```bash
 git clone https://github.com/lucabtz/media-renamer
 cd media-renamer
-cargo install
+cargo build --release
 ```
