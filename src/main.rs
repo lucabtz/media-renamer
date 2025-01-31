@@ -264,6 +264,11 @@ fn main() {
 
         info!("Final path: {}", final_path.display());
 
+        if final_path.exists() {
+            info!("File {} already exists: ignoring", final_path.display());
+            continue;
+        }
+
         match args.action {
             Action::Test => {},
             _ => match final_path.parent() {
