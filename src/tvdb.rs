@@ -7,6 +7,8 @@ use reqwest::{
 };
 use serde::Deserialize;
 
+use crate::media::MediaType;
+
 const API_BASE_URL: &str = "https://api4.thetvdb.com/v4";
 
 /// Client for the TVDB API, implements only the needed functionality for this software
@@ -101,20 +103,6 @@ impl Display for TvdbError {
 struct ApiReply<T> {
     status: String,
     data: T,
-}
-
-pub enum MediaType {
-    Movie,
-    Series,
-}
-
-impl From<MediaType> for &str {
-    fn from(value: MediaType) -> Self {
-        match value {
-            MediaType::Movie => "movie",
-            MediaType::Series => "series",
-        }
-    }
 }
 
 #[derive(Deserialize)]

@@ -5,10 +5,9 @@ use std::{
 use clap::{builder::PossibleValue, Parser, ValueEnum};
 use dir_walker::DirWalker;
 use log::{debug, error, info, warn};
-use media::Media;
 use name_parser::parse_filepath;
 use serde::{Deserialize, Serialize};
-use tvdb::{MediaType, TvdbClient};
+use tvdb::TvdbClient;
 
 mod dir_walker;
 mod media;
@@ -164,29 +163,42 @@ fn symlink(original: &Path, link: &Path) -> Result<(), io::Error> {
     Ok(())
 }
 
-fn main() {
-    let args = Args::parse();
-
-    // ensure conf dir exists
+fn ensure_conf_dir_exists() {
     let conf_dir = get_conf_dir().expect("Could not get home directory");
     if !conf_dir.exists() {
         match fs::create_dir_all(&conf_dir) {
-            Ok(()) => {},
+            Ok(()) => {}
             Err(error) => {
-                println!("Could not create conf dir {}: {}", conf_dir.display(), error);
+                println!(
+                    "Could not create conf dir {}: {}",
+                    conf_dir.display(),
+                    error
+                );
                 return;
             }
         }
     }
+}
 
-    let log_filepath = get_filepath_in_conf_dir("log.txt").expect("Could not find logfile path");
-    
-    let file = match OpenOptions::new().append(true).create(true).open(&log_filepath) {
+fn init_logger(args: &Args) -> bool {
+    let Some(log_filepath) = get_filepath_in_conf_dir("log.txt") else {
+        return false;
+    };
+
+    let file = match OpenOptions::new()
+        .append(true)
+        .create(true)
+        .open(&log_filepath)
+    {
         Ok(file) => file,
         Err(error) => {
-            println!("Could not open log file {}: {}", log_filepath.display(), error);
-            return;
-        },
+            println!(
+                "Could not open log file {}: {}",
+                log_filepath.display(),
+                error
+            );
+            return false;
+        }
     };
 
     let level = if args.verbose {
@@ -195,31 +207,27 @@ fn main() {
         log::LevelFilter::Info
     };
 
-    simplelog::CombinedLogger::init(
-        vec![
-            simplelog::TermLogger::new(
-                level,
-                simplelog::Config::default(),
-                simplelog::TerminalMode::Mixed,
-                simplelog::ColorChoice::Auto,
-            ),
-            simplelog::WriteLogger::new(
-                level,
-                simplelog::Config::default(),
-                file
-            )
-        ]
-    )
-    .expect("Could not initialize logger");
+    if let Err(error) = simplelog::CombinedLogger::init(vec![
+        simplelog::TermLogger::new(
+            level,
+            simplelog::Config::default(),
+            simplelog::TerminalMode::Mixed,
+            simplelog::ColorChoice::Auto,
+        ),
+        simplelog::WriteLogger::new(level, simplelog::Config::default(), file),
+    ]) {
+        println!("Could not initialize logger: {}", error);
+        return false;
+    }
 
-    debug!("{:#?}", args);
+    true
+}
 
-    let Some(config_path) = args.config.map_or_else(
-        || get_filepath_in_conf_dir("config.toml"),
-        |c| Some(PathBuf::from(c)),
-    ) else {
-        return;
-    };
+fn read_config(args: &Args) -> Option<Config> {
+    let config_path = match &args.config {
+        Some(path) => Some(PathBuf::from(path)),
+        None => get_filepath_in_conf_dir("config.toml"),
+    }?;
 
     if !config_path.exists() {
         if let Some(parent) = config_path.parent() {
@@ -267,6 +275,24 @@ fn main() {
         }
     };
 
+    Some(config)
+}
+
+fn main() {
+    let args = Args::parse();
+
+    ensure_conf_dir_exists();
+
+    if !init_logger(&args) {
+        return;
+    }
+
+    debug!("{:#?}", args);
+
+    let Some(config) = read_config(&args) else {
+        return;
+    };
+
     debug!("{:#?}", config);
 
     info!("Connecting TVDB client");
@@ -284,39 +310,26 @@ fn main() {
     {
         info!("Processing file {}", entry.path().display());
 
-        let Some(parsed_file) = parse_filepath(&entry.path(), &config) else {
+        let Some(mut media_file) = parse_filepath(&entry.path(), &config) else {
             warn!("Could not parse filename {}", entry.path().display());
             continue;
         };
 
-        let media_type = match parsed_file.media() {
-            Media::TvSeries { .. } => MediaType::Series,
-            Media::Movie { .. } => MediaType::Movie,
-        };
+        match media_file.request_name(&tvdb) {
+            Ok(true) => {},
+            Ok(false) => {
+                warn!("Could not find {} on TVDB. Ignoring", media_file.name());
+                continue;
+            },
+            Err(error) => {
+                error!("TVDB error while searching for {}: {}", media_file.name(), error);
+            },
+        }
 
-        let media = match parsed_file.media() {
-            Media::TvSeries { name, .. } | Media::Movie { name, .. } => {
-                match tvdb.search(&name, media_type) {
-                    Ok(results) => {
-                        if let Some(result) = results.first() {
-                            parsed_file.media().change_name(result.name.clone())
-                        } else {
-                            warn!("No result for {} on TVDB: ignoring", name);
-                            continue;
-                        }
-                    }
-                    Err(error) => {
-                        error!("{}", error);
-                        continue;
-                    }
-                }
-            }
-        };
-
-        debug!("{:#?}", media);
+        debug!("{:#?}", media_file);
 
         let mut final_path = PathBuf::from(&args.output);
-        final_path.push(media.get_path(parsed_file.extension()));
+        final_path.push(media_file.get_path());
 
         info!("Final path: {}", final_path.display());
 

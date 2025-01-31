@@ -3,9 +3,9 @@ use std::path::Path;
 use log::{debug, warn};
 use regex::Regex;
 
-use crate::{media::Media, path_utils::{get_extension, get_filestem}, Config};
+use crate::{media::{MediaData, MediaFile}, path_utils::{get_extension, get_filestem}, Config};
 
-pub fn parse_filepath(path: &Path, config: &Config) -> Option<ParsedFile> {
+pub fn parse_filepath(path: &Path, config: &Config) -> Option<MediaFile> {
     let mut stem = get_filestem(path)?;
     for replacement in &config.replacements {
         debug!("Applying replacement {} -> {}", &replacement.0, &replacement.1);
@@ -13,27 +13,12 @@ pub fn parse_filepath(path: &Path, config: &Config) -> Option<ParsedFile> {
     }
     debug!("Applying regex to stem: {}", &stem);
 
-    let media = parse_stem(&stem, &config)?;
+    let (name, media_data) = parse_stem(&stem, &config)?;
 
-    Some(ParsedFile { media, extension: get_extension(path)? })
+    Some(MediaFile::new(name, media_data, get_extension(path)?))
 }
 
-pub struct ParsedFile {
-    media: Media,
-    extension: String,
-}
-
-impl ParsedFile {
-    pub fn media(&self) -> &Media {
-        &self.media
-    }
-    
-    pub fn extension(&self) -> &str {
-        &self.extension
-    }
-}
-
-fn parse_stem(stem: &str, config: &Config) -> Option<Media> {
+fn parse_stem(stem: &str, config: &Config) -> Option<(String, MediaData)> {
     for re_string in &config.tv_regex {
         let Ok(re) = Regex::new(re_string) else {
             warn!(
@@ -73,7 +58,7 @@ fn parse_stem(stem: &str, config: &Config) -> Option<Media> {
 
         debug!("Found episode: {}", episode);
 
-        return Some(Media::TvSeries { name, season, episode, });
+        return Some((name, MediaData::TvSeries { season, episode, }));
     }
 
     for re_string in &config.movie_regex {
@@ -106,7 +91,7 @@ fn parse_stem(stem: &str, config: &Config) -> Option<Media> {
 
         debug!("Found year: {}", year);
 
-        return Some(Media::Movie { name, year, });
+        return Some((name, MediaData::Movie { year }));
     }
 
     None

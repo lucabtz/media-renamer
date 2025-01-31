@@ -1,44 +1,99 @@
 use std::path::PathBuf;
 
-#[derive(Debug)]
-pub enum Media {
-    TvSeries {
-        name: String,
-        season: u32,
-        episode: u32,
-    },
+use crate::tvdb::{TvdbClient, TvdbError};
 
-    Movie {
-        name: String,
-        year: u32,
-    },
+#[derive(Debug)]
+pub struct MediaFile {
+    name: String,
+    extension: String,
+    media_data: MediaData,
 }
 
-impl Media {
-    pub fn change_name(&self, new_name: String) -> Media {
-        match *self {
-            Media::TvSeries { season, episode, .. } => Media::TvSeries { name: new_name, season, episode, },
-            Media::Movie { year, .. } => Media::Movie { name: new_name, year },
+impl MediaFile {
+    pub fn new(name: String, media_data: MediaData, extension: String) -> Self {
+        Self {
+            name,
+            extension,
+            media_data,
         }
     }
 
-    pub fn get_path(&self, extension: &str) -> PathBuf {
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn media(&self) -> &MediaData {
+        &self.media_data
+    }
+
+    pub fn extension(&self) -> &str {
+        &self.extension
+    }
+
+    pub fn media_type(&self) -> MediaType {
+        match self.media_data {
+            MediaData::TvSeries { .. } => MediaType::Series,
+            MediaData::Movie { .. } => MediaType::Movie,
+        }
+    }
+
+    pub fn request_name(&mut self, tvdb: &TvdbClient) -> Result<bool, TvdbError> {
+        let media_type = match self.media_data {
+            MediaData::TvSeries { .. } => MediaType::Series,
+            MediaData::Movie { .. } => MediaType::Movie,
+        };
+
+        let results = tvdb.search(&self.name, media_type)?;
+
+        if let Some(result) = results.first() {
+            self.name = result.name.clone();
+        } else {
+            return Ok(false);
+        }
+
+        Ok(true)
+    }
+
+    pub fn get_path(&self) -> PathBuf {
         let mut path = PathBuf::new();
 
-        match self {
-            Media::TvSeries { name, season, episode } => {
+        match &self.media_data {
+            MediaData::TvSeries { season, episode } => {
                 path.push("TV");
-                path.push(name);
+                path.push(&self.name);
                 path.push(format!("Season {}", season));
-                path.push(format!("{} - s{:0>2}e{:0>2}.{}", name, season, episode, extension));
-            },
-            Media::Movie { name, year } => {
+                path.push(format!(
+                    "{} - s{:0>2}e{:0>2}.{}",
+                    &self.name, season, episode, &self.extension
+                ));
+            }
+            MediaData::Movie { year } => {
                 path.push("Movies");
-                path.push(format!("{} ({})", name, year));
-                path.push(format!("{} ({}).{}", name, year, extension));
-            },
+                path.push(format!("{} ({})", &self.name, year));
+                path.push(format!("{} ({}).{}", &self.name, year, &self.extension));
+            }
         }
 
         path
+    }
+}
+
+#[derive(Debug)]
+pub enum MediaData {
+    TvSeries { season: u32, episode: u32 },
+    Movie { year: u32 },
+}
+
+pub enum MediaType {
+    Movie,
+    Series,
+}
+
+impl From<MediaType> for &str {
+    fn from(value: MediaType) -> Self {
+        match value {
+            MediaType::Movie => "movie",
+            MediaType::Series => "series",
+        }
     }
 }
