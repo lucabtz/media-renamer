@@ -1,5 +1,9 @@
 use std::{
-    env, fs::{self, DirEntry, OpenOptions}, io, os, path::{Path, PathBuf}, vec
+    env,
+    fs::{self, DirEntry, OpenOptions},
+    io, os,
+    path::{Path, PathBuf},
+    vec,
 };
 
 use clap::{builder::PossibleValue, Parser, ValueEnum};
@@ -278,6 +282,99 @@ fn read_config(args: &Args) -> Option<Config> {
     Some(config)
 }
 
+fn process_file(path: &Path, args: &Args, config: &Config, tvdb: &TvdbClient) {
+    info!("Processing file {}", path.display());
+
+    let Some(mut media_file) = parse_filepath(path, &config) else {
+        warn!("Could not parse filename {}", path.display());
+        return;
+    };
+
+    match media_file.request_name(&tvdb) {
+        Ok(true) => {}
+        Ok(false) => {
+            warn!("Could not find {} on TVDB. Ignoring", media_file.name());
+            return;
+        }
+        Err(error) => {
+            error!(
+                "TVDB error while searching for {}: {}",
+                media_file.name(),
+                error
+            );
+        }
+    }
+
+    debug!("{:#?}", media_file);
+
+    let mut final_path = PathBuf::from(&args.output);
+    final_path.push(media_file.get_path());
+
+    info!("Final path: {}", final_path.display());
+
+    if final_path.exists() {
+        info!("File {} already exists: ignoring", final_path.display());
+        return;
+    }
+
+    match args.action {
+        Action::Test => {}
+        _ => match final_path.parent() {
+            Some(parent_final_path) => {
+                if let Err(error) = fs::create_dir_all(parent_final_path) {
+                    error!(
+                        "Could not create directory {}: {}",
+                        parent_final_path.display(),
+                        error
+                    );
+                    return;
+                }
+            }
+            None => {}
+        },
+    }
+
+    match args.action {
+        Action::Test => {
+            info!(
+                "TEST: would move from {} to {}",
+                path.display(),
+                final_path.display()
+            );
+        }
+        Action::Move => {
+            if let Err(error) = fs::rename(path, &final_path) {
+                error!(
+                    "Could not move {} to {}: {}",
+                    path.display(),
+                    final_path.display(),
+                    error
+                );
+            }
+        }
+        Action::Copy => {
+            if let Err(error) = fs::copy(path, &final_path) {
+                error!(
+                    "Could not copy {} to {}: {}",
+                    path.display(),
+                    final_path.display(),
+                    error
+                );
+            }
+        }
+        Action::Symlink => {
+            if let Err(error) = symlink(path, &final_path) {
+                error!(
+                    "Could not copy {} to {}: {}",
+                    path.display(),
+                    final_path.display(),
+                    error
+                );
+            }
+        }
+    }
+}
+
 fn main() {
     let args = Args::parse();
 
@@ -303,96 +400,18 @@ fn main() {
     }
     info!("Client connected");
 
-    for entry in DirWalker::new(&args.input, args.max_depth, config.ignored_dirs.clone())
-        .filter_map(|e| e.ok())
-        .filter(|e| e.path().is_file())
-        .filter(|e| extension_matches(e, &config.extensions))
-    {
-        info!("Processing file {}", entry.path().display());
+    let input_path = PathBuf::from(&args.input);
 
-        let Some(mut media_file) = parse_filepath(&entry.path(), &config) else {
-            warn!("Could not parse filename {}", entry.path().display());
-            continue;
-        };
-
-        match media_file.request_name(&tvdb) {
-            Ok(true) => {},
-            Ok(false) => {
-                warn!("Could not find {} on TVDB. Ignoring", media_file.name());
-                continue;
-            },
-            Err(error) => {
-                error!("TVDB error while searching for {}: {}", media_file.name(), error);
-            },
-        }
-
-        debug!("{:#?}", media_file);
-
-        let mut final_path = PathBuf::from(&args.output);
-        final_path.push(media_file.get_path());
-
-        info!("Final path: {}", final_path.display());
-
-        if final_path.exists() {
-            info!("File {} already exists: ignoring", final_path.display());
-            continue;
-        }
-
-        match args.action {
-            Action::Test => {}
-            _ => match final_path.parent() {
-                Some(parent_final_path) => {
-                    if let Err(error) = fs::create_dir_all(parent_final_path) {
-                        error!(
-                            "Could not create directory {}: {}",
-                            parent_final_path.display(),
-                            error
-                        );
-                        continue;
-                    }
-                }
-                None => {}
-            },
-        }
-
-        match args.action {
-            Action::Test => {
-                info!(
-                    "TEST: would move from {} to {}",
-                    entry.path().display(),
-                    final_path.display()
-                );
-            }
-            Action::Move => {
-                if let Err(error) = fs::rename(entry.path(), &final_path) {
-                    error!(
-                        "Could not move {} to {}: {}",
-                        entry.path().display(),
-                        final_path.display(),
-                        error
-                    );
-                }
-            }
-            Action::Copy => {
-                if let Err(error) = fs::copy(entry.path(), &final_path) {
-                    error!(
-                        "Could not copy {} to {}: {}",
-                        entry.path().display(),
-                        final_path.display(),
-                        error
-                    );
-                }
-            }
-            Action::Symlink => {
-                if let Err(error) = symlink(&entry.path(), &final_path) {
-                    error!(
-                        "Could not copy {} to {}: {}",
-                        entry.path().display(),
-                        final_path.display(),
-                        error
-                    );
-                }
-            }
+    if input_path.is_file() {
+        process_file(&input_path, &args, &config, &tvdb);
+    } else {
+        for entry in DirWalker::new(&input_path, args.max_depth, config.ignored_dirs.clone())
+            .filter_map(|e| e.ok())
+            .filter(|e| e.path().is_file())
+            .filter(|e| extension_matches(e, &config.extensions))
+        {
+            process_file(&entry.path(), &args, &config, &tvdb);
         }
     }
+
 }

@@ -2,7 +2,7 @@ use std::{
     collections::VecDeque,
     fs::{self, DirEntry, ReadDir},
     io::Error,
-    path::PathBuf,
+    path::Path,
 };
 
 use log::debug;
@@ -17,13 +17,12 @@ pub struct DirWalker {
 }
 
 impl DirWalker {
-    pub fn new(directory: &str, max_depth: Option<usize>, ignored_dirs: Vec<String>) -> Self {
-        let path = PathBuf::from(directory);
+    pub fn new(path: &Path, max_depth: Option<usize>, ignored_dirs: Vec<String>) -> Self {
         let mut iterator_queue = VecDeque::new();
         if !path.is_dir() {
             let error = Err(Error::new(
                 std::io::ErrorKind::NotADirectory,
-                format!("The file at {} is not a directory", directory),
+                format!("The file at {} is not a directory", path.display()),
             ));
             iterator_queue.push_back(error);
         } else {
