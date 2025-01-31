@@ -34,6 +34,7 @@ impl Media {
             },
             Media::Movie { name, year } => {
                 path.push("Movies");
+                path.push(format!("{} ({})", name, year));
                 path.push(format!("{} ({}).{}", name, year, extension));
             },
         }
