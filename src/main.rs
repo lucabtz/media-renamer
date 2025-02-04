@@ -1,6 +1,6 @@
 use std::{
     env,
-    fs::{self, DirEntry, OpenOptions},
+    fs::{self, OpenOptions},
     io, os,
     path::{Path, PathBuf},
     vec,
