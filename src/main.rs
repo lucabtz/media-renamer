@@ -10,6 +10,7 @@ use clap::{builder::PossibleValue, Parser, ValueEnum};
 use dir_walker::DirWalker;
 use log::{debug, error, info, warn};
 use name_parser::parse_filepath;
+use path_utils::get_extension;
 use serde::{Deserialize, Serialize};
 use tvdb::TvdbClient;
 
@@ -141,16 +142,8 @@ fn get_filepath_in_conf_dir(filename: &str) -> Option<PathBuf> {
     Some(path)
 }
 
-fn extension_matches(entry: &DirEntry, extensions: &[String]) -> bool {
-    let path = entry.path();
-    let Some(extension_os) = path.extension() else {
-        return false;
-    };
-    let Some(extension_str) = extension_os.to_str() else {
-        return false;
-    };
-    let ext = extension_str.to_string();
-
+fn extension_matches(path: &Path, extensions: &[String]) -> bool {
+    let Some(ext) = get_extension(path) else { return false; };
     extensions.contains(&ext)
 }
 
@@ -313,7 +306,7 @@ fn process_file(path: &Path, args: &Args, config: &Config, tvdb: &TvdbClient) {
     info!("Final path: {}", final_path.display());
 
     if final_path.exists() {
-        info!("File {} already exists: ignoring", final_path.display());
+        warn!("File {} already exists: ignoring", final_path.display());
         return;
     }
 
@@ -403,12 +396,16 @@ fn main() {
     let input_path = PathBuf::from(&args.input);
 
     if input_path.is_file() {
-        process_file(&input_path, &args, &config, &tvdb);
+        if extension_matches(&input_path, &config.extensions) {
+            process_file(&input_path, &args, &config, &tvdb);
+        } else {
+            warn!("Input filename extension is not filtered in config, ignoring");
+        }
     } else {
         for entry in DirWalker::new(&input_path, args.max_depth, config.ignored_dirs.clone())
             .filter_map(|e| e.ok())
             .filter(|e| e.path().is_file())
-            .filter(|e| extension_matches(e, &config.extensions))
+            .filter(|e| extension_matches(&e.path(), &config.extensions))
         {
             process_file(&entry.path(), &args, &config, &tvdb);
         }
