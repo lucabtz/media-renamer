@@ -113,7 +113,7 @@ impl Default for Config {
                 "(?<name>.*) [Ss](?<season>[0-9]+)[Ee](?<episode>[0-9]+)".to_string(), // Series Name S01E01
             ],
             movie_regex: vec![
-                "(?<name>.*) (?<year>[0-9]+) ".to_string(), // Movie Name 2025
+                "(?<name>.*) (?<year>[0-9]{4}) ".to_string(), // Movie Name 2025
             ],
             replacements: vec![(".".to_string(), " ".to_string())],
             ignored_dirs: vec![

@@ -84,6 +84,7 @@ pub enum MediaData {
     Movie { year: u32 },
 }
 
+#[derive(PartialEq, Eq, Debug)]
 pub enum MediaType {
     Movie,
     Series,
