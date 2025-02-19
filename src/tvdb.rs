@@ -1,4 +1,4 @@
-use std::fmt::Display;
+use std::{error, fmt::Display};
 
 use const_format::concatcp;
 use reqwest::{
@@ -36,16 +36,15 @@ impl TvdbClient {
             .post(concatcp!(API_BASE_URL, "/login"))
             .header(CONTENT_TYPE, "application/json")
             .body(format!("{{\"apikey\": \"{}\"}}", self.api_key))
-            .send()
-            .map_err(TvdbError::RequestError)?;
+            .send()?;
 
         if res.status() != StatusCode::OK {
             return Err(TvdbError::HttpError(res.status()));
         }
 
-        let text = res.text().map_err(TvdbError::RequestError)?;
+        let text = res.text()?;
         let json: ApiReply<LoginReply> =
-            serde_json::from_str(&text).map_err(TvdbError::ParseError)?;
+            serde_json::from_str(&text)?;
 
         self.token = Some(json.data.token);
 
@@ -58,16 +57,14 @@ impl TvdbClient {
             .get(concatcp!(API_BASE_URL, "/search"))
             .query(&[("q", name), ("type", media_type.into())])
             .bearer_auth(self.token()?)
-            .send()
-            .map_err(TvdbError::RequestError)?;
+            .send()?;
 
         if res.status() != StatusCode::OK {
             return Err(TvdbError::HttpError(res.status()));
         }
 
-        let text = res.text().map_err(TvdbError::RequestError)?;
-        let json: ApiReply<SearchReply> =
-            serde_json::from_str(&text).map_err(TvdbError::ParseError)?;
+        let text = res.text()?;
+        let json: ApiReply<SearchReply> = serde_json::from_str(&text)?;
 
         Ok(json.data)
     }
@@ -96,6 +93,28 @@ impl Display for TvdbError {
             TvdbError::ParseError(error) => write!(f, "Parse error: {}", error),
             TvdbError::HttpError(status_code) => write!(f, "HTTP error: {}", status_code),
         }
+    }
+}
+
+impl error::Error for TvdbError {
+    fn source(&self) -> Option<&(dyn error::Error + 'static)> {
+        match self {
+            TvdbError::RequestError(error) => Some(error),
+            TvdbError::ParseError(error) => Some(error),
+            _ => None,
+        }
+    }
+}
+
+impl From<reqwest::Error> for TvdbError {
+    fn from(value: reqwest::Error) -> Self {
+        Self::RequestError(value)
+    }
+}
+
+impl From<serde_json::Error> for TvdbError {
+    fn from(value: serde_json::Error) -> Self {
+        Self::ParseError(value)
     }
 }
 
